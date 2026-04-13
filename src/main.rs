@@ -1,11 +1,10 @@
-use std::sync::{Arc, Mutex};
-
+use sqlx::sqlite::SqlitePoolOptions;
 use tokio::net::TcpListener;
 use tower_http::trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer};
 use tracing::Level;
 use tracing_subscriber::EnvFilter;
 
-use crate::axum_basic::{model::Task, router::create_router};
+use crate::axum_basic::router::create_router;
 
 mod axum_basic;
 #[tokio::main]
@@ -18,9 +17,16 @@ async fn main() {
         // .without_time()
         .compact()
         .init();
-    let state = Arc::new(Mutex::<Vec<Task>>::new(vec![]));
 
-    let app = create_router(state).layer(
+    let pool = SqlitePoolOptions::new()
+        .max_connections(5)
+        .connect("sqlite:tasks.db")
+        .await
+        .unwrap();
+
+    sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+
+    let app = create_router(pool).layer(
         TraceLayer::new_for_http()
             .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
             .on_request(DefaultOnRequest::new().level(Level::INFO))
